@@ -30,6 +30,8 @@ def post_violation():
 
     owner = firestore_service.resolve_owner(payload["tag_id"])
 
+    # A recorded violation always has a fine issued against it — there's
+    # no amount tracked, just the fact that one was issued.
     violation_id = firestore_service.write_violation(payload, owner)
 
     return (
@@ -38,6 +40,7 @@ def post_violation():
                 "status": "recorded",
                 "violation_id": violation_id,
                 "owner_resolved": owner is not None,
+                "fine_issued": True,
                 "reason": reason,
             }
         ),

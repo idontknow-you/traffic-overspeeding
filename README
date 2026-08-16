@@ -1,36 +1,51 @@
-# Smart Traffic Violation Detection — Backend
+# Smart Traffic Violation Detection
 
-Flask + Firestore backend for the Smart Traffic Violation Detection System.
-Covers everything from the SDLC doc except the React dashboard: violation
-ingestion, validation, owner resolution, and the grievance/appeal flow.
+Flask + Firestore backend, and a React + Vite dashboard, for the Smart
+Traffic Violation And Overspeeding Detection System.
 
-React is **not** in the read path — it reads Firestore directly via
-`onSnapshot()`. This backend only handles writes.
+React is **not** in the write path — it reads Firestore directly via
+`onSnapshot()`. The backend only handles writes (violation ingestion,
+validation, owner resolution).
+
+There is no appeal/grievance flow in this version — violations are
+recorded with a fine issued, and that's the end of the pipeline.
 
 ## Folder structure
 
 ```
-backend/
-├── app.py                    # Flask app factory + entrypoint
-├── config.py                 # env-driven config
-├── extensions.py             # Firebase Admin SDK init (Firestore client)
-├── requirements.txt
-├── .env.example
-├── .gitignore
-├── credentials/
-│   ├── .gitkeep
-│   └── serviceAccountKey.json   ← you add this, it's gitignored
-├── routes/
-│   ├── violations.py         # POST /violation
-│   └── appeals.py            # POST /appeal, GET /appeal/<id>
-├── services/
-│   ├── validation.py         # grace-buffer + sustained-duration rules
-│   └── firestore_service.py  # all Firestore reads/writes
-└── tests/
-    └── test_validation.py    # pytest — no Firestore needed
+project-root/
+├── backend/
+│   ├── app.py                    # Flask app factory + entrypoint
+│   ├── config.py                 # env-driven config
+│   ├── extensions.py             # Firebase Admin SDK init (Firestore client)
+│   ├── requirements.txt
+│   ├── .env.example
+│   ├── .gitignore
+│   ├── credentials/
+│   │   ├── .gitkeep
+│   │   └── serviceAccountKey.json   ← you add this, it's gitignored
+│   ├── routes/
+│   │   └── violations.py         # POST /violation
+│   ├── services/
+│   │   ├── validation.py         # grace-buffer + sustained-duration rules
+│   │   └── firestore_service.py  # all Firestore reads/writes
+│   └── tests/
+│       └── test_validation.py    # pytest — no Firestore needed
+└── frontend/
+    ├── index.html
+    ├── package.json
+    ├── vite.config.js
+    └── src/
+        ├── main.jsx
+        ├── App.jsx
+        ├── firebase.js            # Firebase client SDK config
+        ├── styling/
+        │   └── App.css
+        └── components/
+            └── ViolationsDashboard.jsx
 ```
 
-## Setup
+## Backend setup
 
 ```bash
 cd backend
@@ -51,19 +66,18 @@ backend/credentials/serviceAccountKey.json
 That's the default path `config.py` looks for — you don't need to touch
 `.env` unless you're using a different filename or location.
 
-## Run (local/demo mode)
+### Run (local/demo mode)
 
 ```bash
 python app.py
 ```
 
 Binds to `0.0.0.0:5000` by default so the ESP32 can reach it over local
-WiFi. If venue WiFi has client isolation, tunnel with ngrok instead
-(Section 4.4 network fallback test).
+WiFi. If venue WiFi has client isolation, tunnel with ngrok instead.
 
-## Endpoints
+### Endpoints
 
-### `POST /violation`
+#### `POST /violation`
 Called by the ESP32 in-vehicle unit / signal-jump unit.
 
 ```json
@@ -82,43 +96,30 @@ Called by the ESP32 in-vehicle unit / signal-jump unit.
 - Returns `200 {"status": "ignored", "reason": "..."}` if it fails the
   grace-buffer (<5% over limit) or sustained-duration (~3s) check —
   nothing is written to Firestore.
-- Returns `201 {"status": "recorded", "violation_id": "...", ...}` on
-  success.
+- Returns `201 {"status": "recorded", "violation_id": "...", "fine_issued": true, ...}`
+  on success. `fine_issued` is always `true` for a recorded violation —
+  there's no fine amount tracked, just the fact that one was issued.
 - Returns `400` for a malformed payload.
 
-### `POST /appeal`
-```json
-{"violation_id": "abc123", "tag_id": "TAG123", "reason": "GPS drift near flyover"}
-```
-Returns `201 {"status": "submitted", "appeal_id": "..."}`, or `404` if
-`violation_id` doesn't exist.
-
-### `GET /appeal/<violation_id>`
-Returns the latest appeal status for that violation, or `404` if none
-was filed.
-
-### `GET /health`
+#### `GET /health`
 Liveness check — `200 {"status": "ok"}`.
 
-## Firestore collections
-
-Matches Section 4.2 of the SDLC doc:
+### Firestore collections
 
 | Collection | Written by | Read by |
 |---|---|---|
-| `violations` | this backend | React (direct) |
-| `vehicle_registry` | pre-seeded / admin | this backend (lookup on write) |
-| `speed_limit_map` | pre-seeded | this backend / ESP32 cache |
-| `appeals` | this backend | React (direct) |
+| `violations` | backend | React (direct) |
+| `vehicle_registry` | pre-seeded / admin | backend (lookup on write) |
+| `speed_limit_map` | pre-seeded | backend / ESP32 cache |
 
 `vehicle_registry` documents are expected to be keyed by `tag_id`, with
 fields `owner_id` and `owner_details`.
 
-Firestore security rules (prototype scope, Section 4.2): public read on
-`violations`/`appeals` for the dashboard; writes restricted to this
-service's account via the Admin SDK.
+Firestore security rules (prototype scope): public read on `violations`
+for the dashboard; writes restricted to the backend's service account
+via the Admin SDK.
 
-## Deployment
+### Deployment
 
 - **Local/demo:** as above — this is the primary path on shared venue WiFi.
 - **Hosted fallback:** deploy to Render/Railway. Set
@@ -127,7 +128,7 @@ service's account via the Admin SDK.
   so `extensions.py` skips the default `credentials/` path and falls
   back to `credentials.ApplicationDefault()` automatically.
 
-## Testing
+### Testing
 
 ```bash
 pytest tests/
@@ -136,6 +137,36 @@ pytest tests/
 Covers grace-buffer, sustained-duration, and payload validation —
 all pure functions, no Firestore connection needed.
 
+## Frontend setup
+
+```bash
+cd frontend
+npm install
+npm run dev
+```
+
+Add a `src/firebase.js` exporting an initialized `db` (Firestore client)
+using your Firebase project's web config.
+
+### What it does
+
+`ViolationsDashboard` subscribes to the `violations` collection with
+`onSnapshot()` and renders live rows as they come in — no polling, and
+Flask is never touched on this path. Each row shows the vehicle, type,
+detail, location, whether a fine was issued (a status pill, not an
+amount), and the time.
+
 For the full `ESP32 → Flask → Firestore` and `Firestore → React` paths,
-you need a real (or emulated) Firestore project — see Section 4.4 of
-the SDLC doc for the manual/demo rehearsal checklist.
+you need a real (or emulated) Firestore project to test end-to-end.
+
+## Changelog
+
+- Removed the appeal/grievance flow entirely: `POST /appeal`,
+  `GET /appeal/<id>`, the `appeals` Firestore collection, and the
+  `AppealPanel.jsx` component (`AppealModal`, `AppealButton`,
+  `AppealsList`) are all gone. `ViolationsDashboard` no longer renders
+  an "Appeal" column, and `App.jsx` no longer mounts `AppealsList`.
+- Fines are now shown as an issued/not-issued status, not a ₹ amount —
+  no fine-amount field or calculation anywhere in the frontend.
+- `App.css` moved into `src/styling/`. Wherever it's imported (typically
+  `main.jsx`), update the import path to `./styling/App.css`.

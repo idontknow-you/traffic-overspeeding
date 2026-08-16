@@ -1,0 +1,116 @@
+@import url('https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Inter:wght@400;500;600&display=swap');
+
+/* --- Add these rules to your existing App.css (or keep this file as-is
+   if App.css was otherwise empty/default). Everything is prefixed
+   "stc-" so it won't collide with anything else in the project. --- */
+
+.stc-root {
+  background: #ddf0f6;
+  color: #1B1D21;
+  font-family: 'Inter', system-ui, sans-serif;
+}
+.stc-display { font-family: 'Space Grotesk', system-ui, sans-serif; }
+.stc-mono { font-family: 'IBM Plex Mono', ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+/* Shared text/border tones, so components stop repeating text-[#6B6E72] etc. */
+.stc-muted { color: #6B6E72; }
+.stc-heading { color: #082011; }
+.stc-border { border-color: #E1E4E0; }
+
+.stc-divider {
+  border: none;
+  border-top: 1px solid #E1E4E0;
+}
+
+.stc-live-dot {
+  width: 7px; height: 7px; border-radius: 999px; background: #14532D;
+  box-shadow: 0 0 0 0 rgba(20,83,45,0.5);
+  animation: stcPulse 1.8s ease-out infinite;
+}
+@keyframes stcPulse {
+  0%   { box-shadow: 0 0 0 0 rgba(20,83,45,0.35); }
+  70%  { box-shadow: 0 0 0 7px rgba(20,83,45,0); }
+  100% { box-shadow: 0 0 0 0 rgba(20,83,45,0); }
+}
+
+.stc-panel { background: #FFFFFF; border: 1px solid #E1E4E0; border-radius: 14px; }
+
+.stc-row-new { animation: stcHighlight 1.6s ease-out; }
+@keyframes stcHighlight {
+  0%   { background: #FDF3D6; }
+  100% { background: transparent; }
+}
+
+.stc-table tbody tr + tr { border-top: 1px solid #EEF0EC; }
+
+.stc-footer { background: #14532D; }
+
+/* --- Violation type colors ---
+   Each type sets --accent / --accent-bg once; every element that needs
+   that type's color (chip, dot, speed readout) just reads the variable
+   instead of carrying its own inline style. */
+.stc-type-overspeeding { --accent: #1D4ED8; --accent-bg: #DCE6FB; }
+.stc-type-rash_driving { --accent: #B45309; --accent-bg: #FDECC8; }
+.stc-type-red_light    { --accent: #B3261E; --accent-bg: #FBE2DF; }
+.stc-type-unknown      { --accent: #6B6E72; --accent-bg: #EEF0EC; }
+
+.stc-type-chip {
+  color: var(--accent);
+  background: var(--accent-bg);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+.stc-type-text {
+  color: var(--accent);
+  font-family: 'IBM Plex Mono', ui-monospace, monospace;
+  font-weight: 600;
+}
+.stc-type-dot {
+  background: var(--accent);
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  display: inline-block;
+}
+
+/* --- Fine status --- */
+.stc-fine-issued     { color: #14532D; background: #EAF3EC; }
+.stc-fine-not-issued { color: #6B6E72; background: #EEF0EC; }
+.stc-fine-pill {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+/* --- Filter chips --- */
+.stc-chip {
+  transition: border-color 0.15s ease, color 0.15s ease, background 0.15s ease;
+  border-width: 1px;
+  border-style: solid;
+  border-radius: 4px;
+}
+.stc-chip-active   { border-color: #14532D; color: #14532D; background: #EAF3EC; }
+.stc-chip-inactive { border-color: #E1E4E0; color: #6B6E72; background: #FFFFFF; }
+.stc-chip-inactive:hover { color: #1B1D21; }
+
+.stc-chip:focus-visible, .stc-row:focus-visible {
+  outline: 2px solid #14532D; outline-offset: -2px;
+}
+
+/* --- Error banner --- */
+.stc-error-banner {
+  color: #8A2A22;
+  background: #FBE2DF;
+  border: 1px solid rgba(179, 38, 30, 0.3);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stc-row-new { animation: none; }
+  .stc-live-dot { animation: none; }
+}

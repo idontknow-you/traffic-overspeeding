@@ -1,26 +1,33 @@
 // src/components/ViolationsDashboard.jsx
 //
 // Reads the `violations` collection directly from Firestore in real time —
-// Flask is never in this read path (per your SDLC's key architectural decision).
+// Flask is never in this read path.
 //
 // Requires: npm install firebase
 // Expects a sibling ../firebase.js exporting `db` (see firebase.js provided alongside this file)
+// All styling lives in ../styling/App.css — this component only ever
+// composes class names, it never uses style={{...}}. Per-type colors
+// come from CSS custom properties set by the `stc-type-<type>` classes;
+// components just add `stc-type-chip` / `stc-type-text` / `stc-type-dot`
+// alongside that to render with the right color.
 
 import { useEffect, useRef, useState } from "react";
 import { collection, query, orderBy, limit, onSnapshot } from "firebase/firestore";
 import { db } from "../firebase";
-import { AppealButton } from "./AppealPanel";
+import "../styling/App.css";
 
-// Client-side display-only fallback. Prefer having Flask write a real `fine`
-// field on the document — this is just so the UI doesn't show blank values
-// if that field isn't there yet.
-const FALLBACK_FINES = { overspeeding: 1000, rash_driving: 1000, red_light: 1500 };
-
-const TYPE_META = {
-  overspeeding: { label: "Overspeeding",  pill: "bg-blue-50 text-blue-600" },
-  rash_driving: { label: "Rash Driving",  pill: "bg-orange-50 text-orange-600" },
-  red_light:    { label: "Red Light",     pill: "bg-amber-50 text-amber-600" },
+const TYPE_LABEL = {
+  overspeeding: "Overspeeding",
+  rash_driving: "Rash Driving",
+  red_light: "Red Light",
 };
+
+const FILTERS = ["all", "overspeeding", "rash_driving", "red_light"];
+
+// Falls back to "unknown" (a neutral gray class) for anything not in TYPE_LABEL.
+function typeClass(type) {
+  return TYPE_LABEL[type] ? `stc-type-${type}` : "stc-type-unknown";
+}
 
 function formatTime(ts) {
   if (!ts) return "—";
@@ -30,16 +37,20 @@ function formatTime(ts) {
 
 function detailText(v) {
   if ((v.type === "overspeeding" || v.type === "rash_driving") && v.speed != null && v.limit != null) {
-    return `${v.speed} km/h in a ${v.limit} km/h zone`;
+    return { speed: v.speed, limit: v.limit };
   }
-  if (v.type === "red_light") return "Crossed junction during red signal";
-  return "—";
+  return null;
 }
 
 function locationText(v) {
-  if (v.location) return v.location; // preferred, if Flask writes a zone/segment name
+  if (v.location) return v.location;
   if (v.gps && typeof v.gps.lat === "number") return `${v.gps.lat.toFixed(4)}, ${v.gps.lng.toFixed(4)}`;
   return "—";
+}
+
+function fineIssued(v) {
+  if (typeof v.fine_issued === "boolean") return v.fine_issued;
+  return true;
 }
 
 export default function ViolationsDashboard() {
@@ -47,7 +58,8 @@ export default function ViolationsDashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
   const [newIds, setNewIds] = useState(() => new Set());
-  const prevIdsRef = useRef(new Set()); // ref, not state — avoids stale-closure bugs inside the listener
+  const [activeFilter, setActiveFilter] = useState("all");
+  const prevIdsRef = useRef(new Set());
 
   useEffect(() => {
     const q = query(collection(db, "violations"), orderBy("timestamp", "desc"), limit(25));
@@ -83,101 +95,143 @@ export default function ViolationsDashboard() {
       }
     );
 
-    return () => unsubscribe(); // critical — leaked listeners keep reading (and billing) after unmount
+    return () => unsubscribe();
   }, []);
 
-  const totalFines = violations.reduce(
-    (sum, v) => sum + (v.fine ?? FALLBACK_FINES[v.type] ?? 0),
-    0
-  );
+  const finesIssuedCount = violations.filter(fineIssued).length;
+  const visible = activeFilter === "all" ? violations : violations.filter((v) => v.type === activeFilter);
 
   return (
-    <div className="min-h-screen bg-slate-100 p-6 font-sans">
-      <style>{`
-        @keyframes rowIn { from { background:#FEF9C3; opacity:.55; } to { background:transparent; opacity:1; } }
-        .row-in { animation: rowIn 1.4s ease; }
-      `}</style>
-
-      <div className="max-w-5xl mx-auto">
-        <header className="bg-slate-900 rounded-2xl px-7 py-5 mb-5 flex items-center justify-between flex-wrap gap-3">
+    <div className="stc-root min-h-screen flex flex-col font-sans">
+      <div className="max-w-6xl mx-auto w-full px-6 pt-6">
+        <header className="flex items-start justify-between flex-wrap gap-4 pb-6">
           <div>
-            <h1 className="text-white text-xl font-extrabold">Cloud Backend — Live Violations</h1>
-            <p className="text-slate-400 text-sm mt-1">Firestore → React via onSnapshot(), no polling, no Flask in the read path</p>
+            <p className="stc-mono stc-muted text-[13px] tracking-[0.18em] mb-1.5" font-bold>
+              CLOUD BACKEND &middot; FIRESTORE REALTIME &middot; TEAM KINETIC APEX
+            </p>
+            <h1 className="stc-display stc-heading text-2xl font-bold">Live Violation Feed</h1>
           </div>
-          <span className="inline-flex items-center gap-2 bg-emerald-500/15 text-emerald-400 border border-emerald-400/30 text-xs font-bold px-3 py-1.5 rounded-full">
-            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-            {loading ? "CONNECTING…" : "LIVE"}
+          <span className="stc-mono stc-heading stc-border inline-flex items-center gap-2 text-[11px] font-medium tracking-wide border bg-white px-3 py-1.5 rounded-full">
+            <span className="stc-live-dot" aria-hidden="true" />
+            {loading ? "CONNECTING" : "LIVE"}
           </span>
         </header>
+      </div>
 
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 text-sm rounded-xl p-4 mb-5">
-            Couldn't read from Firestore: {error}. Check your firebase.js config and Firestore security rules
-            (the `violations` collection needs <code>allow read: if true;</code> for the prototype).
-          </div>
-        )}
+      <hr className="stc-divider w-full" />
 
-        <div className="grid grid-cols-3 gap-4 mb-5">
-          <StatCard label="Violations" value={violations.length} />
-          <StatCard label="Fines Issued" value={`₹${totalFines.toLocaleString("en-IN")}`} />
-          <StatCard label="Connection" value={loading ? "Connecting…" : "Connected"} />
-        </div>
-
-        <div className="bg-white rounded-2xl shadow-sm overflow-hidden">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-slate-500 text-xs font-bold border-b border-slate-100">
-                <th className="px-5 py-3">Vehicle</th>
-                <th className="px-5 py-3">Type</th>
-                <th className="px-5 py-3">Detail</th>
-                <th className="px-5 py-3">Location</th>
-                <th className="px-5 py-3">Fine</th>
-                <th className="px-5 py-3">Time</th>
-                <th className="px-5 py-3">Appeal</th>
-              </tr>
-            </thead>
-            <tbody>
-              {violations.map((v) => {
-                const meta = TYPE_META[v.type] || { label: v.type || "Unknown", pill: "bg-slate-100 text-slate-600" };
-                const fine = v.fine ?? FALLBACK_FINES[v.type] ?? 0;
-                return (
-                  <tr
-                    key={v.id}
-                    className={`border-b border-slate-50 last:border-0 ${newIds.has(v.id) ? "row-in" : ""}`}
-                  >
-                    <td className="px-5 py-3 font-semibold text-slate-800">{v.owner_id || v.tag_id || "—"}</td>
-                    <td className="px-5 py-3">
-                      <span className={`text-xs font-bold px-2.5 py-1 rounded-full ${meta.pill}`}>{meta.label}</span>
-                    </td>
-                    <td className="px-5 py-3 text-slate-600">{detailText(v)}</td>
-                    <td className="px-5 py-3 text-slate-600">{locationText(v)}</td>
-                    <td className="px-5 py-3 font-bold text-slate-800">₹{fine.toLocaleString("en-IN")}</td>
-                    <td className="px-5 py-3 text-slate-400">{formatTime(v.timestamp)}</td>
-                    <td className="px-5 py-3">
-                      <AppealButton violation={v} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-
-          {!loading && violations.length === 0 && !error && (
-            <div className="text-center text-slate-400 text-sm py-10">
-              No violations logged yet — waiting for the first event from Flask.
+      <div className="flex-1 w-full">
+        <div className="max-w-6xl mx-auto w-full px-6 py-6">
+          {error && (
+            <div className="stc-error-banner text-sm rounded-xl p-4 mb-5">
+              Couldn't read from Firestore: {error}. Check your firebase.js config and Firestore security rules
+              (the <code className="stc-mono">violations</code> collection needs <code className="stc-mono">allow read: if true;</code>).
             </div>
           )}
+
+          {/* Stat strip */}
+          <div className="grid grid-cols-3 gap-3 mb-6">
+            <StatCard label="Violations" value={violations.length} />
+            <StatCard label="Fines Issued" value={finesIssuedCount} className="stc-heading" />
+            <StatCard label="Connection" value={loading ? "Connecting" : "Connected"} isText />
+          </div>
+
+          {/* Filter chips */}
+          <div className="flex items-center gap-2 mb-4 flex-wrap" role="tablist" aria-label="Filter by violation type">
+            {FILTERS.map((key) => {
+              const active = activeFilter === key;
+              return (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={active}
+                  onClick={() => setActiveFilter(key)}
+                  className={`stc-chip stc-mono flex items-center gap-2 text-[11px] font-medium tracking-wide px-3 py-1.5 rounded-full ${
+                    active ? "stc-chip-active" : "stc-chip-inactive"
+                  }`}
+                >
+                  <span className={`${key === "all" ? "stc-type-unknown" : `stc-type-${key}`} stc-type-dot`} aria-hidden="true" />
+                  {(key === "all" ? "All" : TYPE_LABEL[key]).toUpperCase()}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Table */}
+          <div className="stc-panel overflow-hidden">
+            {!loading && visible.length === 0 && !error ? (
+              <div className="stc-muted text-center text-sm py-14">
+                {violations.length === 0
+                  ? "No violations logged yet — waiting for the first event from Flask."
+                  : "No violations match this filter."}
+              </div>
+            ) : (
+              <table className="stc-table w-full text-sm">
+                <thead>
+                  <tr className="stc-muted stc-border text-left text-[10px] font-semibold tracking-[0.1em] border-b">
+                    <th className="px-5 py-3">Vehicle</th>
+                    <th className="px-5 py-3">Type</th>
+                    <th className="px-5 py-3">Detail</th>
+                    <th className="px-5 py-3">Location</th>
+                    <th className="px-5 py-3">Fine</th>
+                    <th className="px-5 py-3">Time</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {visible.map((v) => {
+                    const cls = typeClass(v.type);
+                    const label = TYPE_LABEL[v.type] || v.type || "Unknown";
+                    const issued = fineIssued(v);
+                    const speedDetail = detailText(v);
+
+                    return (
+                      <tr key={v.id} tabIndex={0} className={`stc-row ${newIds.has(v.id) ? "stc-row-new" : ""}`}>
+                        <td className="stc-mono px-5 py-3.5 font-semibold text-[13px]">
+                          {v.owner_id || v.tag_id || "UNKNOWN"}
+                        </td>
+                        <td className="px-5 py-3.5">
+                          <span className={`${cls} stc-type-chip`}>{label.toUpperCase()}</span>
+                        </td>
+                        <td className="px-5 py-3.5">
+                          {speedDetail ? (
+                            <span>
+                              <span className={`${cls} stc-type-text`}>{speedDetail.speed} km/h</span>{" "}
+                              <span className="stc-muted text-xs">in a {speedDetail.limit} km/h zone</span>
+                            </span>
+                          ) : v.type === "red_light" ? (
+                            <span>
+                              Crossed junction on red
+                              {v.signal_id ? <span className="stc-mono stc-muted text-xs"> &middot; {v.signal_id}</span> : null}
+                            </span>
+                          ) : (
+                            "—"
+                          )}
+                        </td>
+                        <td className="stc-mono stc-muted px-5 py-3.5 text-xs">{locationText(v)}</td>
+                        <td className="px-5 py-3.5">
+                          <span className={`stc-fine-pill ${issued ? "stc-fine-issued" : "stc-fine-not-issued"}`}>
+                            {issued ? "ISSUED" : "NOT ISSUED"}
+                          </span>
+                        </td>
+                        <td className="stc-mono stc-muted px-5 py-3.5 text-xs">{formatTime(v.timestamp)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            )}
+          </div>
         </div>
       </div>
     </div>
   );
 }
 
-function StatCard({ label, value }) {
+function StatCard({ label, value, isText, className = "" }) {
   return (
-    <div className="bg-emerald-50 rounded-xl p-4 text-center">
-      <div className="text-xl font-extrabold text-slate-900">{value}</div>
-      <div className="text-[11px] font-bold text-slate-500 mt-1 tracking-wide">{label.toUpperCase()}</div>
+    <div className="stc-panel px-4 py-3.5">
+      <div className={`stc-mono font-semibold ${isText ? "text-base" : "text-2xl"} ${className}`}>{value}</div>
+      <div className="stc-muted text-[10px] font-medium mt-1 tracking-[0.14em]">{label.toUpperCase()}</div>
     </div>
   );
 }
