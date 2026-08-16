@@ -14,7 +14,7 @@ import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
 const firebaseConfig = {
-  apiKey: "REMOVED",
+  apiKey:import.meta.env.VITE_FIREBASE_API_KEY,
   authDomain: "traffic-overspeeding.firebaseapp.com",
   projectId: "traffic-overspeeding",
   storageBucket: "traffic-overspeeding.firebasestorage.app",
