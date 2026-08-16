@@ -1,0 +1,141 @@
+# Smart Traffic Violation Detection — Backend
+
+Flask + Firestore backend for the Smart Traffic Violation Detection System.
+Covers everything from the SDLC doc except the React dashboard: violation
+ingestion, validation, owner resolution, and the grievance/appeal flow.
+
+React is **not** in the read path — it reads Firestore directly via
+`onSnapshot()`. This backend only handles writes.
+
+## Folder structure
+
+```
+backend/
+├── app.py                    # Flask app factory + entrypoint
+├── config.py                 # env-driven config
+├── extensions.py             # Firebase Admin SDK init (Firestore client)
+├── requirements.txt
+├── .env.example
+├── .gitignore
+├── credentials/
+│   ├── .gitkeep
+│   └── serviceAccountKey.json   ← you add this, it's gitignored
+├── routes/
+│   ├── violations.py         # POST /violation
+│   └── appeals.py            # POST /appeal, GET /appeal/<id>
+├── services/
+│   ├── validation.py         # grace-buffer + sustained-duration rules
+│   └── firestore_service.py  # all Firestore reads/writes
+└── tests/
+    └── test_validation.py    # pytest — no Firestore needed
+```
+
+## Setup
+
+```bash
+cd backend
+python -m venv venv
+source venv/bin/activate      # Windows: venv\Scripts\activate
+pip install -r requirements.txt
+
+cp .env.example .env
+```
+
+Download your service account key from Firebase Console > Project
+Settings > Service Accounts > Generate new private key, and save it as:
+
+```
+backend/credentials/serviceAccountKey.json
+```
+
+That's the default path `config.py` looks for — you don't need to touch
+`.env` unless you're using a different filename or location.
+
+## Run (local/demo mode)
+
+```bash
+python app.py
+```
+
+Binds to `0.0.0.0:5000` by default so the ESP32 can reach it over local
+WiFi. If venue WiFi has client isolation, tunnel with ngrok instead
+(Section 4.4 network fallback test).
+
+## Endpoints
+
+### `POST /violation`
+Called by the ESP32 in-vehicle unit / signal-jump unit.
+
+```json
+{
+  "tag_id": "TAG123",
+  "type": "overspeeding",        // overspeeding | rash_driving | red_light
+  "speed": 68,                    // required for overspeeding / rash_driving
+  "limit": 50,                    // required for overspeeding / rash_driving
+  "duration_sec": 4,              // required for overspeeding / rash_driving
+  "signal_id": "SIG-04",          // required for red_light
+  "gps": {"lat": 18.52, "lng": 73.85},
+  "timestamp": "2026-08-15T10:00:00Z"   // optional, server sets if omitted
+}
+```
+
+- Returns `200 {"status": "ignored", "reason": "..."}` if it fails the
+  grace-buffer (<5% over limit) or sustained-duration (~3s) check —
+  nothing is written to Firestore.
+- Returns `201 {"status": "recorded", "violation_id": "...", ...}` on
+  success.
+- Returns `400` for a malformed payload.
+
+### `POST /appeal`
+```json
+{"violation_id": "abc123", "tag_id": "TAG123", "reason": "GPS drift near flyover"}
+```
+Returns `201 {"status": "submitted", "appeal_id": "..."}`, or `404` if
+`violation_id` doesn't exist.
+
+### `GET /appeal/<violation_id>`
+Returns the latest appeal status for that violation, or `404` if none
+was filed.
+
+### `GET /health`
+Liveness check — `200 {"status": "ok"}`.
+
+## Firestore collections
+
+Matches Section 4.2 of the SDLC doc:
+
+| Collection | Written by | Read by |
+|---|---|---|
+| `violations` | this backend | React (direct) |
+| `vehicle_registry` | pre-seeded / admin | this backend (lookup on write) |
+| `speed_limit_map` | pre-seeded | this backend / ESP32 cache |
+| `appeals` | this backend | React (direct) |
+
+`vehicle_registry` documents are expected to be keyed by `tag_id`, with
+fields `owner_id` and `owner_details`.
+
+Firestore security rules (prototype scope, Section 4.2): public read on
+`violations`/`appeals` for the dashboard; writes restricted to this
+service's account via the Admin SDK.
+
+## Deployment
+
+- **Local/demo:** as above — this is the primary path on shared venue WiFi.
+- **Hosted fallback:** deploy to Render/Railway. Set
+  `GOOGLE_APPLICATION_CREDENTIALS` via the platform's secret-file
+  mechanism, and set the env var `FIREBASE_CREDENTIALS_PATH=` (empty)
+  so `extensions.py` skips the default `credentials/` path and falls
+  back to `credentials.ApplicationDefault()` automatically.
+
+## Testing
+
+```bash
+pytest tests/
+```
+
+Covers grace-buffer, sustained-duration, and payload validation —
+all pure functions, no Firestore connection needed.
+
+For the full `ESP32 → Flask → Firestore` and `Firestore → React` paths,
+you need a real (or emulated) Firestore project — see Section 4.4 of
+the SDLC doc for the manual/demo rehearsal checklist.
