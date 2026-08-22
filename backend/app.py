@@ -3,7 +3,6 @@ from flask_cors import CORS
 
 from config import Config
 from extensions import init_firebase
-from routes.appeals import appeals_bp
 from routes.violations import violations_bp
 
 
@@ -19,7 +18,6 @@ def create_app():
     init_firebase()
 
     app.register_blueprint(violations_bp)
-    app.register_blueprint(appeals_bp)
 
     @app.route("/health", methods=["GET"])
     def health():
