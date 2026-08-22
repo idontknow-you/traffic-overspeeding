@@ -26,6 +26,11 @@ def create_app():
     return app
 
 
+# Module-level app object — required so WSGI servers (Vercel's
+# @vercel/python, gunicorn, etc.) can import and serve this app without
+# running the __main__ block below.
+app = create_app()
+
+
 if __name__ == "__main__":
-    app = create_app()
     app.run(host=Config.HOST, port=Config.PORT, debug=Config.DEBUG)

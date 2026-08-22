@@ -18,11 +18,10 @@ import "../styling/App.css";
 
 const TYPE_LABEL = {
   overspeeding: "Overspeeding",
-  rash_driving: "Rash Driving",
   red_light: "Red Light",
 };
 
-const FILTERS = ["all", "overspeeding", "rash_driving", "red_light"];
+const FILTERS = ["all", "overspeeding", "red_light"];
 
 // Falls back to "unknown" (a neutral gray class) for anything not in TYPE_LABEL.
 function typeClass(type) {

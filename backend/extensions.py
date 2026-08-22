@@ -1,3 +1,5 @@
+import json
+
 import firebase_admin
 from firebase_admin import credentials, firestore
 
@@ -11,17 +13,30 @@ def init_firebase():
     Initialize the Firebase Admin SDK exactly once and return a Firestore
     client. Safe to call multiple times (e.g. from tests) — subsequent
     calls just return the existing client.
+
+    Credential resolution order:
+    1. FIREBASE_CREDENTIALS_JSON env var — full service account JSON as a
+       string. Use this on serverless platforms (Vercel, etc.) where you
+       can't ship a gitignored credentials/ file.
+    2. FIREBASE_CREDENTIALS_PATH env var / default
+       credentials/serviceAccountKey.json — for local/demo mode and any
+       hosted platform with a persistent or secret-mounted filesystem
+       (Render, Railway).
+    3. credentials.ApplicationDefault() — platform-default credentials,
+       e.g. GOOGLE_APPLICATION_CREDENTIALS pointing at a mounted secret
+       file, or GCP's ambient default credentials.
     """
     global _db
     if _db is not None:
         return _db
 
     if not firebase_admin._apps:
-        if Config.FIREBASE_CREDENTIALS_PATH:
+        if Config.FIREBASE_CREDENTIALS_JSON:
+            cred_dict = json.loads(Config.FIREBASE_CREDENTIALS_JSON)
+            cred = credentials.Certificate(cred_dict)
+        elif Config.FIREBASE_CREDENTIALS_PATH:
             cred = credentials.Certificate(Config.FIREBASE_CREDENTIALS_PATH)
         else:
-            # Falls back to GOOGLE_APPLICATION_CREDENTIALS env var or
-            # platform-default credentials (useful in hosted mode).
             cred = credentials.ApplicationDefault()
 
         init_kwargs = {}
